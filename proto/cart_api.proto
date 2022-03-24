@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "akkaserverless/annotations.proto";
+import "cart_domain.proto";
+
+
+package com.example_2;
+
+
+message Cart {
+  repeated LineItem items = 1;
+}
+
+message LineItem {
+  string product_id = 1;
+  string name = 2;
+  int32 quantity = 3;
+}
+
+message AddLineItem {
+  string cart_id = 1 [(akkaserverless.field).entity_key = true];
+  string product_id = 2;
+  string name = 3;
+  int32 quantity = 4;
+}
+
+message RemoveLineItem {
+  string cart_id = 1 [(akkaserverless.field).entity_key = true];
+  string product_id = 2;
+}
+
+message GetShoppingCart {
+  string cart_id = 1 [(akkaserverless.field).entity_key = true];
+}
+
+service ShoppingCartService {
+  option (akkaserverless.service) = {
+    type: SERVICE_TYPE_ENTITY
+    component: ".domain.ShoppingCart"
+  };
+
+  rpc AddItem(AddLineItem) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/cart/{cart_id}/items/add"
+      body: "*"
+    };
+  }
+
+  rpc RemoveItem(RemoveLineItem) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/cart/{cart_id}/items/{product_id}/remove"
+    };
+  }
+
+  rpc GetCart(GetShoppingCart) returns (Cart) {
+    option (google.api.http) = {
+      get: "/carts/{cart_id}"
+    };
+  }
+}
+
+
+
+// query side
+
+message GetQuantitiesByProductRequest {
+  string product_id = 1;
+}
+message GetQuantitiesByProductState {
+  string product_id = 1;
+  int32 total_quantity = 2;
+}
+
+service ShoppingCartReactionService {
+  rpc ForwardAdded(domain.ItemAdded) returns (GetQuantitiesByProductState) {
+    option (akkaserverless.method).eventing.in = {
+      event_sourced_entity: "eventsourced-shopping-cart"
+    };
+    option (akkaserverless.method).view.update = {
+      table: "quantities_by_product"
+      transform_updates: true
+    };
+  }
+  rpc GetQuantitiesByProduct(GetQuantitiesByProductRequest) returns (stream GetQuantitiesByProductState) {
+    option (akkaserverless.method).view.query = {
+      query: "SELECT * FROM quantities_by_product WHERE product_id = :product_id"
+    };
+  }
+}
